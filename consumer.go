@@ -36,12 +36,11 @@ func (c *Consumer) Conf() *kafka.ConfigMap {
 	return c.conf
 }
 
-func (c *Consumer) HandlerEvent(eh ConsumerEventHandler) {
+func (c *Consumer) HandlerEvent(timeoutMs int, eh ConsumerEventHandler) {
 	for {
-		ev, ok := <-c.Events()
-		if !ok {
-			eh(c, ev, true)
-			return
+		ev := c.Poll(timeoutMs)
+		if ev == nil {
+			continue
 		}
 
 		switch e := ev.(type) {
@@ -64,7 +63,7 @@ func (c *Consumer) HandlerEvent(eh ConsumerEventHandler) {
 		case kafka.Error:
 			WriteError(e, c, nil, "consume kafka error")
 		}
-		eh(c, ev, false)
+		eh(c, ev)
 	}
 }
 

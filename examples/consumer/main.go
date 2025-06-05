@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/grpc-boot/gkafka"
@@ -11,33 +12,37 @@ import (
 
 var (
 	consumer *gkafka.Consumer
-	topic    = `gkafka_test`
+	topic    = `test_file_common_fill`
 )
 
 func init() {
 	gkafka.SetDebugLog(func(c *gkafka.Consumer, p *gkafka.Producer, msg string, args ...any) {
 		msg = fmt.Sprintf(msg, args...)
 		if c != nil {
-			fmt.Printf("consumer debug msg[%s]: %s", time.Now().Format(time.DateTime), msg)
+			fmt.Printf("consumer debug msg[%s]: %s\n", time.Now().Format(time.DateTime), msg)
 		} else if p != nil {
-			fmt.Printf("producer debug msg[%s]: %s", time.Now().Format(time.DateTime), msg)
+			fmt.Printf("producer debug msg[%s]: %s\n", time.Now().Format(time.DateTime), msg)
 		}
 	})
 
 	gkafka.SetErrorLog(func(err error, c *gkafka.Consumer, p *gkafka.Producer, msg string, args ...any) {
 		msg = fmt.Sprintf(msg, args...)
 		if c != nil {
-			fmt.Printf("consumer error msg[%s]: %s", time.Now().Format(time.DateTime), msg)
+			fmt.Printf("consumer error msg[%s]: %s error: %v\n", time.Now().Format(time.DateTime), msg, err)
 		} else if p != nil {
-			fmt.Printf("producer error msg[%s]: %s", time.Now().Format(time.DateTime), msg)
+			fmt.Printf("producer error msg[%s]: %s error: %v\n", time.Now().Format(time.DateTime), msg, err)
 		}
 	})
 
-	confJson := `{
-		"bootstrap.servers":        "127.0.0.1:39092",
-		"group.id":                 "gkafka_test",
+	if os.Getenv("BS") == "" {
+		_ = os.Setenv("BS", "127.0.0.1:39092")
+	}
+
+	confJson := fmt.Sprintf(`{
+		"bootstrap.servers":        "%s",
+		"group.id":                 "test_file_common_fill",
 		"auto.offset.reset":        "earliest"
-	}`
+	}`, os.Getenv("BS"))
 
 	consumerConf, err := gkafka.LoadJsonConf4Consumer([]byte(confJson))
 	if err != nil {
@@ -61,7 +66,7 @@ func main() {
 
 	defer shutDown()
 
-	consumer.HandlerEvent(func(c *gkafka.Consumer, event kafka.Event, done bool) {
+	consumer.HandlerEvent(10*1000, func(c *gkafka.Consumer, event kafka.Event) {
 		if e, ok := event.(*kafka.Message); ok {
 			fmt.Printf("consumer msg topic:%s partition:%d key:%s value:%s offset:%d total:%d\n",
 				*e.TopicPartition.Topic,

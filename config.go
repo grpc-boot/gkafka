@@ -13,15 +13,12 @@ var (
 			//'error' - trigger an error (ERR__AUTO_OFFSET_RESET) which is retrieved by consuming messages and checking 'message->err'.
 			"auto.offset.reset": "earliest",
 			//Emit RD_KAFKA_RESP_ERR__PARTITION_EOF event whenever the consumer reaches the end of a partition
-			"enable.partition.eof":     true,
-			"go.events.channel.enable": true,
+			"enable.partition.eof": true,
 		}
 	}
 
 	defaultProducerConfig = func() Config {
 		return Config{
-			"go.events.channel.size":  102400,
-			"go.produce.channel.size": 102400,
 			//Maximum number of messages allowed on the producer queue.
 			//This queue is shared by all topics and partitions.
 			"queue.buffering.max.messages": 1024000,
@@ -32,7 +29,40 @@ var (
 	}
 )
 
-type Config map[string]interface{}
+type ConsumerConfig struct {
+	Topics        []string `json:"topics" yaml:"topics"`
+	PollTimeoutMs int      `json:"pollTimeoutMs" yaml:"pollTimeoutMs"`
+	EventType     string   `json:"eventType" yaml:"eventType"`
+	Config        Config   `json:"config" yaml:"config"`
+}
+
+func (cc *ConsumerConfig) GetPollTimeoutMs() int {
+	if cc.PollTimeoutMs < 1 {
+		return 10 * 1000
+	}
+
+	return cc.PollTimeoutMs
+}
+
+type Config map[string]any
+
+func (c Config) WithDefaultConsumerConfig() {
+	cm := defaultConsumerConfig()
+	for field, value := range cm {
+		if _, exists := c[field]; !exists {
+			c[field] = value
+		}
+	}
+}
+
+func (c Config) WithDefaultProducerConfig() {
+	cm := defaultProducerConfig()
+	for field, value := range cm {
+		if _, exists := c[field]; !exists {
+			c[field] = value
+		}
+	}
+}
 
 func (c Config) ToKafkaConfig() *kafka.ConfigMap {
 	cm := &kafka.ConfigMap{}

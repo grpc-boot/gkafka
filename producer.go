@@ -32,7 +32,6 @@ func NewProducer(conf Config, eh ProducerEventHandler) (*Producer, error) {
 	}
 
 	go producer.handlerEvent(eh)
-
 	return producer, nil
 }
 
@@ -49,10 +48,10 @@ func (p *Producer) handlerEvent(handler ProducerEventHandler) {
 			m := ev
 			if m.TopicPartition.Error != nil {
 				failedTotal := p.failedTotal.Inc()
-				WriteError(m.TopicPartition.Error, nil, p, "delivery msg to [topic:%s] [partition: %d] with [key: %s] failed [fail total: %d]: %s", *m.TopicPartition.Topic, m.TopicPartition.Partition, m.Key, failedTotal, m.Value)
+				WriteError(m.TopicPartition.Error, nil, p, "delivery msg to [topic:%s] [partition: %d] with [key: %s] failed [fail total: %d]: %s", *m.TopicPartition.Topic, m.TopicPartition.Partition, Bytes2String(m.Key), failedTotal, Bytes2String(m.Value))
 			} else {
 				okTotal := p.successTotal.Inc()
-				WriteDebug(nil, p, "delivered msg to [topic:%s] [partition: %d] with [key: %s] success [success total: %d]: %s", *m.TopicPartition.Topic, m.TopicPartition.Partition, m.Key, okTotal, m.Value)
+				WriteDebug(nil, p, "delivered msg to [topic:%s] [partition: %d] with [key: %s] success [success total: %d]: %s", *m.TopicPartition.Topic, m.TopicPartition.Partition, Bytes2String(m.Key), okTotal, Bytes2String(m.Value))
 			}
 		case kafka.Error:
 			WriteError(ev, nil, p, "event error")
@@ -71,8 +70,8 @@ func (p *Producer) Conf() *kafka.ConfigMap {
 	return p.conf
 }
 
-// Produce2Buffer 向librdkafka写消息，错误类型包括：队列已满、超时等
-func (p *Producer) Produce2Buffer(topic string, value []byte, partition int32, key []byte) error {
+// ProduceAsync 向librdkafka写消息，错误类型包括：队列已满、超时等
+func (p *Producer) ProduceAsync(topic string, value []byte, partition int32, key []byte) error {
 	msg := &kafka.Message{
 		TopicPartition: kafka.TopicPartition{
 			Topic:     &topic,
@@ -86,53 +85,37 @@ func (p *Producer) Produce2Buffer(topic string, value []byte, partition int32, k
 	return p.Produce(msg, nil)
 }
 
-// ProduceMsg2Buffer 向librdkafka发送消息，错误类型包括：队列已满、超时等
-func (p *Producer) ProduceMsg2Buffer(topic string, value []byte) error {
-	return p.Produce2Buffer(topic, value, kafka.PartitionAny, nil)
+// ProduceMsgAsync 向librdkafka发送消息，错误类型包括：队列已满、超时等
+func (p *Producer) ProduceMsgAsync(topic string, value []byte) error {
+	return p.ProduceAsync(topic, value, kafka.PartitionAny, nil)
 }
 
-// ProduceOrder2Buffer 向librdkafka顺序(同一个id会发送到同一个partition)发送消息
-func (p *Producer) ProduceOrder2Buffer(topic string, value []byte, id int64) error {
-	return p.Produce2Buffer(topic, value, kafka.PartitionAny, p.id2Key(id))
-}
-
-// ProduceMsgAsync 异步向某个topic发送消息
-func (p *Producer) ProduceMsgAsync(topic string, value []byte) {
-	p.ProduceAsync(topic, value, kafka.PartitionAny, nil)
-}
-
-// ProduceOrderAsync 异步向某个topic顺序(同一个id会发送到同一个partition)发送消息
-func (p *Producer) ProduceOrderAsync(topic string, value []byte, id int64) {
-	p.ProduceAsync(topic, value, kafka.PartitionAny, p.id2Key(id))
-}
-
-// ProduceAsync 异步向某个topic发送消息
-func (p *Producer) ProduceAsync(topic string, value []byte, partition int32, key []byte) {
-	msg := &kafka.Message{
-		TopicPartition: kafka.TopicPartition{
-			Topic:     &topic,
-			Partition: partition,
-		},
-		Value: value,
-		Key:   key,
-	}
-
-	WriteDebug(nil, p, "send msg to [topic:%s] [partition: %d] channel with [key: %s]: %s", topic, partition, key, value)
-	p.ProduceChannel() <- msg
+// ProduceOrderAsync 向librdkafka顺序(同一个id会发送到同一个partition)发送消息
+func (p *Producer) ProduceOrderAsync(topic string, value []byte, id int64) error {
+	return p.ProduceAsync(topic, value, kafka.PartitionAny, p.id2Key(id))
 }
 
 func (p *Producer) FlushAll(ctx context.Context) (err error) {
 	select {
 	default:
 	case <-ctx.Done():
-		return ctx.Err()
+		err = ctx.Err()
+		WriteError(err, nil, p, "producer flush all failed")
+		return
 	}
 
 	WriteDebug(nil, p, "producer begin flush all")
 
 	rest := 1
 	for rest > 0 {
-		rest = p.Flush(500)
+		select {
+		case <-ctx.Done():
+			err = ctx.Err()
+			WriteError(err, nil, p, "producer flush all failed")
+			return
+		default:
+			rest = p.Flush(500)
+		}
 	}
 
 	WriteDebug(nil, p, "producer flush all done")
