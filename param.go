@@ -40,6 +40,11 @@ func (p Param) GetStringSlice(key string) []string {
 	return stringList
 }
 
+func (p Param) GetBool(key string) bool {
+	value, _ := p[key].(bool)
+	return value
+}
+
 // GetInt 获取Int
 func (p Param) GetInt(key string) int {
 	return int(p.GetInt64(key))
@@ -119,7 +124,7 @@ func (p Param) GetUint8(key string) uint8 {
 	return uint8(p.GetInt64(key))
 }
 
-// GetFloat64 获取Int64
+// GetFloat64 获取Float64
 func (p Param) GetFloat64(key string) float64 {
 	value, _ := p[key].(float64)
 	return value
